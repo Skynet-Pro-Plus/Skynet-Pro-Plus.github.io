@@ -132,8 +132,9 @@
     .empty { padding: 24px; border: 1px dashed rgba(255,255,255,.28); border-radius: 22px; color: var(--muted); text-align: center; }
     .note { font-size: .9rem; color: var(--muted); }
     .role-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0 24px; }
-    .role-card { border-radius: 22px; padding: 20px; border: 1px solid var(--border); background: rgba(255,255,255,.07); text-align: left; }
+    .role-card { border-radius: 22px; padding: 24px 20px; border: 1px solid var(--border); background: rgba(255,255,255,.07); text-align: center; font-size: 1.05rem; }
     .role-card.active { border-color: rgba(0,229,255,.72); box-shadow: 0 0 0 3px rgba(0,229,255,.12); }
+    .file-picker { display: none; }
     .server-actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0; }
     .server-frame {
       width: 100%;
@@ -161,18 +162,16 @@
   <main class="shell">
     <span class="eyebrow">ðŸ”’ Unlisted file vault</span>
     <h1>Secure access for <span class="gradient-text">shared files.</span></h1>
-    <p>This private page is intentionally not linked from the public homepage. Enter the manager code to add or remove files, or the download code to access available downloads.</p>
+    <p>This private page is intentionally not linked from the public homepage. Enter the admin code to add or remove files, or the user code to access available downloads.</p>
 
     <section id="loginPanel" class="panel" aria-labelledby="loginTitle">
       <h2 id="loginTitle">Choose access level</h2>
       <div class="role-grid" aria-label="Vault access level">
         <button id="managerRole" type="button" class="role-card" data-role="manager">
-          <strong>Manager</strong>
-          <span>Add, remove, and download files</span>
+          <strong>Admin</strong>
         </button>
         <button id="userRole" type="button" class="role-card" data-role="user">
           <strong>User</strong>
-          <span>Download files only</span>
         </button>
       </div>
       <form id="loginForm">
@@ -193,9 +192,8 @@
       </div>
 
       <form id="uploadForm" data-manager-only>
-        <label for="fileInput">Upload files</label>
-        <input id="fileInput" type="file" multiple />
-        <button id="uploadButton" type="submit">Add to File List</button>
+        <input id="fileInput" class="file-picker" type="file" multiple />
+        <button id="uploadButton" type="button">Add Files</button>
       </form>
       <p id="uploadStatus" class="status" role="status"></p>
 
@@ -265,7 +263,7 @@
     const renderFiles = async () => {
       managerOnlyControls.forEach((control) => control.classList.toggle('hidden', !canManage()));
       accessNote.textContent = canManage()
-        ? 'Manager access active. You can add, remove, and download files.'
+        ? 'Admin access active. You can add, remove, and download files.'
         : 'User access active. You can download files only.';
 
       const response = await apiFetch('/api/files');
@@ -320,11 +318,11 @@
       event.preventDefault();
       const password = passwordInput.value;
       if (!selectedRole) {
-        loginStatus.textContent = 'Choose Manager or User first.';
+        loginStatus.textContent = 'Choose Admin or User first.';
         return;
       }
       if (selectedRole === 'manager' && password === MANAGER_PASSWORD) {
-        loginStatus.textContent = 'Manager access granted.';
+        loginStatus.textContent = 'Admin access granted.';
         unlock('manager', password);
         loginForm.reset();
       } else if (selectedRole === 'user' && password === USER_PASSWORD) {
@@ -336,12 +334,17 @@
       }
     });
 
-    uploadForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
+    uploadForm.addEventListener('submit', (event) => event.preventDefault());
+
+    uploadForm.addEventListener('click', (event) => {
+      if (event.target.closest('#uploadButton')) fileInput.click();
+    });
+
+    fileInput.addEventListener('change', async () => {
       if (!canManage()) return;
       const uploads = Array.from(fileInput.files || []);
       if (!uploads.length) {
-        uploadStatus.textContent = 'Choose a file first, then click Add to File List.';
+        uploadStatus.textContent = 'Choose a file first.';
         return;
       }
       const body = new FormData();
