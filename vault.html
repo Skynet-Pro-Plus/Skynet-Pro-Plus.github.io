@@ -146,7 +146,7 @@
   <main class="shell">
     <span class="eyebrow">🔒 Unlisted file vault</span>
     <h1>Secure access for <span class="gradient-text">shared files.</span></h1>
-    <p>This private page is intentionally not linked from the public homepage. Enter the access code to upload files into this browser's vault and manage the visible file list.</p>
+    <p>This private page is intentionally not linked from the public homepage. Enter the manager code to add or remove files, or the download code to access available downloads.</p>
 
     <section id="loginPanel" class="panel" aria-labelledby="loginTitle">
       <h2 id="loginTitle">Enter vault password</h2>
@@ -162,12 +162,12 @@
       <div class="toolbar">
         <div>
           <h2 id="vaultTitle">File control center</h2>
-          <p class="note">Files are saved locally in this browser. For shared cloud uploads, connect this page to a storage backend.</p>
+          <p id="accessNote" class="note">Files are saved locally in this browser. For shared cloud uploads, connect this page to a storage backend.</p>
         </div>
         <button id="lockButton" type="button" class="danger">Lock Vault</button>
       </div>
 
-      <form id="uploadForm">
+      <form id="uploadForm" data-manager-only>
         <label for="fileInput">Upload files</label>
         <input id="fileInput" type="file" multiple />
         <button id="uploadButton" type="submit">Add to File List</button>
@@ -175,7 +175,7 @@
 
       <div class="toolbar">
         <span class="eyebrow">Uploaded assets</span>
-        <button id="clearButton" type="button" class="danger">Delete All</button>
+        <button id="clearButton" type="button" class="danger" data-manager-only>Delete All</button>
       </div>
       <ul id="fileList" class="file-list"></ul>
       <p id="emptyState" class="empty">No files uploaded yet. Add files to populate this list.</p>
@@ -183,9 +183,10 @@
   </main>
 
   <script>
-    const PASSWORD = '2311';
+    const MANAGER_PASSWORD = '2311';
+    const DOWNLOAD_PASSWORD = '1212';
     const STORAGE_KEY = 'skynetproplus-vault-files';
-    const SESSION_KEY = 'skynetproplus-vault-unlocked';
+    const SESSION_KEY = 'skynetproplus-vault-access';
 
     const loginPanel = document.querySelector('#loginPanel');
     const vaultPanel = document.querySelector('#vaultPanel');
@@ -197,6 +198,9 @@
     const emptyState = document.querySelector('#emptyState');
     const lockButton = document.querySelector('#lockButton');
     const clearButton = document.querySelector('#clearButton');
+    const accessNote = document.querySelector('#accessNote');
+    const managerOnlyControls = document.querySelectorAll('[data-manager-only]');
+    let accessMode = sessionStorage.getItem(SESSION_KEY) || '';
 
     const formatBytes = (bytes) => {
       if (bytes === 0) return '0 B';
@@ -207,36 +211,61 @@
 
     const getFiles = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     const saveFiles = (files) => localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+    const canManage = () => accessMode === 'manager';
+
+    const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener('load', () => resolve(reader.result));
+      reader.addEventListener('error', () => reject(reader.error));
+      reader.readAsDataURL(file);
+    });
 
     const renderFiles = () => {
       const files = getFiles();
       fileList.innerHTML = '';
       emptyState.classList.toggle('hidden', files.length > 0);
-      clearButton.disabled = files.length === 0;
+      clearButton.disabled = files.length === 0 || !canManage();
+      managerOnlyControls.forEach((control) => control.classList.toggle('hidden', !canManage()));
+      accessNote.textContent = canManage()
+        ? 'Manager access active. You can add, remove, and download files saved in this browser.'
+        : 'Download access active. You can download available files, but uploads and deletion are locked.';
 
       files.forEach((file) => {
         const item = document.createElement('li');
         const details = document.createElement('div');
         const name = document.createElement('strong');
         const meta = document.createElement('span');
+        const actions = document.createElement('div');
+        const downloadLink = document.createElement('a');
         const deleteButton = document.createElement('button');
 
         item.className = 'file-card';
         name.textContent = file.name;
         meta.textContent = `${formatBytes(file.size)} • ${file.type || 'Unknown type'} • Added ${file.added}`;
+        downloadLink.className = 'cta';
+        downloadLink.href = file.dataUrl || '#';
+        downloadLink.download = file.name;
+        downloadLink.textContent = file.dataUrl ? 'Download' : 'Unavailable';
+        if (!file.dataUrl) {
+          downloadLink.setAttribute('aria-disabled', 'true');
+          downloadLink.addEventListener('click', (event) => event.preventDefault());
+        }
         deleteButton.className = 'danger';
         deleteButton.type = 'button';
         deleteButton.dataset.id = file.id;
         deleteButton.textContent = 'Delete';
 
         details.append(name, meta);
-        item.append(details, deleteButton);
+        actions.append(downloadLink);
+        if (canManage()) actions.append(deleteButton);
+        item.append(details, actions);
         fileList.appendChild(item);
       });
     };
 
-    const unlock = () => {
-      sessionStorage.setItem(SESSION_KEY, 'true');
+    const unlock = (mode) => {
+      accessMode = mode;
+      sessionStorage.setItem(SESSION_KEY, mode);
       loginPanel.classList.add('hidden');
       vaultPanel.classList.remove('hidden');
       renderFiles();
@@ -245,9 +274,13 @@
     loginForm.addEventListener('submit', (event) => {
       event.preventDefault();
       const password = document.querySelector('#password').value;
-      if (password === PASSWORD) {
-        loginStatus.textContent = 'Access granted.';
-        unlock();
+      if (password === MANAGER_PASSWORD) {
+        loginStatus.textContent = 'Manager access granted.';
+        unlock('manager');
+        loginForm.reset();
+      } else if (password === DOWNLOAD_PASSWORD) {
+        loginStatus.textContent = 'Download access granted.';
+        unlock('download');
         loginForm.reset();
       } else {
         loginStatus.textContent = 'Incorrect password. Try again.';
@@ -256,40 +289,47 @@
 
     uploadForm.addEventListener('submit', (event) => {
       event.preventDefault();
+      if (!canManage()) return;
       const uploads = Array.from(fileInput.files || []);
       if (!uploads.length) return;
       const currentFiles = getFiles();
-      const newFiles = uploads.map((file) => ({
+      Promise.all(uploads.map(async (file) => ({
         id: `${Date.now()}-${crypto.randomUUID()}`,
         name: file.name,
         size: file.size,
         type: file.type,
-        added: new Date().toLocaleString()
-      }));
-      saveFiles([...newFiles, ...currentFiles]);
-      fileInput.value = '';
-      renderFiles();
+        added: new Date().toLocaleString(),
+        dataUrl: await readFileAsDataUrl(file)
+      }))).then((newFiles) => {
+        saveFiles([...newFiles, ...currentFiles]);
+        fileInput.value = '';
+        renderFiles();
+      }).catch(() => {
+        accessNote.textContent = 'One of those files could not be added. Try a smaller file or a different format.';
+      });
     });
 
     fileList.addEventListener('click', (event) => {
       const button = event.target.closest('button[data-id]');
-      if (!button) return;
+      if (!button || !canManage()) return;
       saveFiles(getFiles().filter((file) => file.id !== button.dataset.id));
       renderFiles();
     });
 
     clearButton.addEventListener('click', () => {
+      if (!canManage()) return;
       saveFiles([]);
       renderFiles();
     });
 
     lockButton.addEventListener('click', () => {
       sessionStorage.removeItem(SESSION_KEY);
+      accessMode = '';
       vaultPanel.classList.add('hidden');
       loginPanel.classList.remove('hidden');
     });
 
-    if (sessionStorage.getItem(SESSION_KEY) === 'true') unlock();
+    if (accessMode === 'manager' || accessMode === 'download') unlock(accessMode);
   </script>
 </body>
 </html>
