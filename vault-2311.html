@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>SkynetProPlus | Private File Vault</title>
+  <style>
+    :root {
+      --midnight: #07111f;
+      --navy: #0b1830;
+      --cyan: #00e5ff;
+      --violet: #8b5cf6;
+      --pink: #ff3d9a;
+      --lime: #b6ff4d;
+      --white: #f8fbff;
+      --muted: #a7b5ca;
+      --glass: rgba(255, 255, 255, 0.09);
+      --border: rgba(255, 255, 255, 0.18);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--white);
+      background:
+        radial-gradient(circle at 20% 10%, rgba(0, 229, 255, 0.24), transparent 30%),
+        radial-gradient(circle at 80% 0%, rgba(255, 61, 154, 0.23), transparent 32%),
+        linear-gradient(135deg, var(--midnight), #020611 58%, #100923);
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95), transparent 88%);
+    }
+
+    .shell { width: min(980px, calc(100% - 40px)); margin: 0 auto; position: relative; }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(18px);
+      background: rgba(7, 17, 31, 0.76);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav { display: flex; justify-content: space-between; align-items: center; padding: 18px 0; }
+    .brand-logo { width: min(260px, 46vw); height: auto; display: block; filter: drop-shadow(0 0 24px rgba(0,229,255,.22)); }
+
+    .cta, button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,.26);
+      background: linear-gradient(135deg, rgba(0,229,255,.22), rgba(139,92,246,.25));
+      color: var(--white);
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-weight: 900;
+      box-shadow: 0 18px 50px rgba(0,0,0,.25);
+      cursor: pointer;
+    }
+
+    button.danger { background: linear-gradient(135deg, rgba(255,61,154,.25), rgba(139,92,246,.2)); }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+
+    main { padding: 76px 0; }
+    .eyebrow {
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      color: var(--lime);
+      background: rgba(182,255,77,.08);
+      border: 1px solid rgba(182,255,77,.24);
+      border-radius: 999px;
+      padding: 8px 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-size: .72rem;
+    }
+
+    h1 { margin: 20px 0; font-size: clamp(2.8rem, 7vw, 5.7rem); line-height: .9; letter-spacing: -.08em; }
+    h2 { margin: 0 0 16px; font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1; letter-spacing: -.05em; }
+    .gradient-text { background: linear-gradient(90deg, var(--cyan), var(--white), var(--pink)); -webkit-background-clip: text; color: transparent; }
+    p { color: var(--muted); line-height: 1.7; }
+
+    .panel {
+      margin-top: 34px;
+      padding: clamp(22px, 4vw, 36px);
+      border: 1px solid var(--border);
+      border-radius: 30px;
+      background: var(--glass);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 24px 90px rgba(0,0,0,.28);
+    }
+
+    label { display: block; margin-bottom: 10px; color: var(--white); font-weight: 900; }
+    input[type="password"], input[type="file"] {
+      width: 100%;
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(255,255,255,.08);
+      color: var(--white);
+      font: inherit;
+    }
+
+    .status { min-height: 24px; color: var(--lime); font-weight: 800; }
+    .hidden { display: none; }
+    .toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 22px 0; }
+    .file-list { display: grid; gap: 14px; padding: 0; margin: 0; list-style: none; }
+    .file-card { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; padding: 18px; border: 1px solid var(--border); border-radius: 22px; background: rgba(255,255,255,.07); }
+    .file-card strong { display: block; overflow-wrap: anywhere; }
+    .file-card span { display: block; margin-top: 5px; color: var(--muted); font-size: .92rem; }
+    .empty { padding: 24px; border: 1px dashed rgba(255,255,255,.28); border-radius: 22px; color: var(--muted); text-align: center; }
+    .note { font-size: .9rem; color: var(--muted); }
+
+    @media (max-width: 640px) {
+      .file-card { grid-template-columns: 1fr; }
+      .brand-logo { width: min(220px, 58vw); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell nav">
+      <img class="brand-logo" src="assets/skynetproplus-logo.png" alt="SkynetProPlus">
+      <span class="eyebrow">Private signal</span>
+    </div>
+  </header>
+
+  <main class="shell">
+    <span class="eyebrow">🔒 Unlisted file vault</span>
+    <h1>Secure access for <span class="gradient-text">shared files.</span></h1>
+    <p>This private page is intentionally not linked from the public homepage. Enter the access code to upload files into this browser's vault and manage the visible file list.</p>
+
+    <section id="loginPanel" class="panel" aria-labelledby="loginTitle">
+      <h2 id="loginTitle">Enter vault password</h2>
+      <form id="loginForm">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" inputmode="numeric" required />
+        <button type="submit">Unlock Vault</button>
+      </form>
+      <p id="loginStatus" class="status" role="status"></p>
+    </section>
+
+    <section id="vaultPanel" class="panel hidden" aria-labelledby="vaultTitle">
+      <div class="toolbar">
+        <div>
+          <h2 id="vaultTitle">File control center</h2>
+          <p class="note">Files are saved locally in this browser. For shared cloud uploads, connect this page to a storage backend.</p>
+        </div>
+        <button id="lockButton" type="button" class="danger">Lock Vault</button>
+      </div>
+
+      <form id="uploadForm">
+        <label for="fileInput">Upload files</label>
+        <input id="fileInput" type="file" multiple />
+        <button id="uploadButton" type="submit">Add to File List</button>
+      </form>
+
+      <div class="toolbar">
+        <span class="eyebrow">Uploaded assets</span>
+        <button id="clearButton" type="button" class="danger">Delete All</button>
+      </div>
+      <ul id="fileList" class="file-list"></ul>
+      <p id="emptyState" class="empty">No files uploaded yet. Add files to populate this list.</p>
+    </section>
+  </main>
+
+  <script>
+    const PASSWORD = '2311';
+    const STORAGE_KEY = 'skynetproplus-vault-files';
+    const SESSION_KEY = 'skynetproplus-vault-unlocked';
+
+    const loginPanel = document.querySelector('#loginPanel');
+    const vaultPanel = document.querySelector('#vaultPanel');
+    const loginForm = document.querySelector('#loginForm');
+    const loginStatus = document.querySelector('#loginStatus');
+    const uploadForm = document.querySelector('#uploadForm');
+    const fileInput = document.querySelector('#fileInput');
+    const fileList = document.querySelector('#fileList');
+    const emptyState = document.querySelector('#emptyState');
+    const lockButton = document.querySelector('#lockButton');
+    const clearButton = document.querySelector('#clearButton');
+
+    const formatBytes = (bytes) => {
+      if (bytes === 0) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+      return `${(bytes / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
+    };
+
+    const getFiles = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const saveFiles = (files) => localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+
+    const renderFiles = () => {
+      const files = getFiles();
+      fileList.innerHTML = '';
+      emptyState.classList.toggle('hidden', files.length > 0);
+      clearButton.disabled = files.length === 0;
+
+      files.forEach((file) => {
+        const item = document.createElement('li');
+        const details = document.createElement('div');
+        const name = document.createElement('strong');
+        const meta = document.createElement('span');
+        const deleteButton = document.createElement('button');
+
+        item.className = 'file-card';
+        name.textContent = file.name;
+        meta.textContent = `${formatBytes(file.size)} • ${file.type || 'Unknown type'} • Added ${file.added}`;
+        deleteButton.className = 'danger';
+        deleteButton.type = 'button';
+        deleteButton.dataset.id = file.id;
+        deleteButton.textContent = 'Delete';
+
+        details.append(name, meta);
+        item.append(details, deleteButton);
+        fileList.appendChild(item);
+      });
+    };
+
+    const unlock = () => {
+      sessionStorage.setItem(SESSION_KEY, 'true');
+      loginPanel.classList.add('hidden');
+      vaultPanel.classList.remove('hidden');
+      renderFiles();
+    };
+
+    loginForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const password = document.querySelector('#password').value;
+      if (password === PASSWORD) {
+        loginStatus.textContent = 'Access granted.';
+        unlock();
+        loginForm.reset();
+      } else {
+        loginStatus.textContent = 'Incorrect password. Try again.';
+      }
+    });
+
+    uploadForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const uploads = Array.from(fileInput.files || []);
+      if (!uploads.length) return;
+      const currentFiles = getFiles();
+      const newFiles = uploads.map((file) => ({
+        id: `${Date.now()}-${crypto.randomUUID()}`,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        added: new Date().toLocaleString()
+      }));
+      saveFiles([...newFiles, ...currentFiles]);
+      fileInput.value = '';
+      renderFiles();
+    });
+
+    fileList.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-id]');
+      if (!button) return;
+      saveFiles(getFiles().filter((file) => file.id !== button.dataset.id));
+      renderFiles();
+    });
+
+    clearButton.addEventListener('click', () => {
+      saveFiles([]);
+      renderFiles();
+    });
+
+    lockButton.addEventListener('click', () => {
+      sessionStorage.removeItem(SESSION_KEY);
+      vaultPanel.classList.add('hidden');
+      loginPanel.classList.remove('hidden');
+    });
+
+    if (sessionStorage.getItem(SESSION_KEY) === 'true') unlock();
+  </script>
+</body>
+</html>
