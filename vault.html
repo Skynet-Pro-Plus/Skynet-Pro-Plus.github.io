@@ -366,14 +366,13 @@
 
       if (downloadButton) {
         const downloadName = downloadButton.dataset.download;
-        const response = await apiFetch(`/api/download/${encodeURIComponent(downloadName)}`);
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
+        const base = await loadApiBase();
+        const url = `${base}/api/download/${encodeURIComponent(downloadName)}?role=${encodeURIComponent(accessMode)}&password=${encodeURIComponent(accessPassword)}`;
         const link = document.createElement('a');
         link.href = url;
         link.download = downloadName;
+        link.rel = 'noopener';
         link.click();
-        URL.revokeObjectURL(url);
       }
 
       if (deleteButton && canManage()) {
