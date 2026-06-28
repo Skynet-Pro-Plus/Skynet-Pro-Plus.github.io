@@ -172,6 +172,7 @@
         <input id="fileInput" type="file" multiple />
         <button id="uploadButton" type="submit">Add to File List</button>
       </form>
+      <p id="uploadStatus" class="status" role="status"></p>
 
       <div class="toolbar">
         <span class="eyebrow">Uploaded assets</span>
@@ -196,6 +197,7 @@
     const fileInput = document.querySelector('#fileInput');
     const fileList = document.querySelector('#fileList');
     const emptyState = document.querySelector('#emptyState');
+    const uploadStatus = document.querySelector('#uploadStatus');
     const lockButton = document.querySelector('#lockButton');
     const clearButton = document.querySelector('#clearButton');
     const accessNote = document.querySelector('#accessNote');
@@ -212,6 +214,14 @@
     const getFiles = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     const saveFiles = (files) => localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
     const canManage = () => accessMode === 'manager';
+    const getDownloadableFiles = () => getFiles().filter((file) => file.dataUrl);
+
+    const removeLegacyFiles = () => {
+      const files = getFiles();
+      const downloadableFiles = files.filter((file) => file.dataUrl);
+      if (downloadableFiles.length !== files.length) saveFiles(downloadableFiles);
+      return files.length - downloadableFiles.length;
+    };
 
     const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -221,14 +231,16 @@
     });
 
     const renderFiles = () => {
-      const files = getFiles();
+      const files = getDownloadableFiles();
       fileList.innerHTML = '';
       emptyState.classList.toggle('hidden', files.length > 0);
       clearButton.disabled = files.length === 0 || !canManage();
       managerOnlyControls.forEach((control) => control.classList.toggle('hidden', !canManage()));
-      accessNote.textContent = canManage()
-        ? 'Manager access active. You can add, remove, and download files saved in this browser.'
-        : 'Download access active. You can download available files, but uploads and deletion are locked.';
+      if (!uploadStatus.textContent) {
+        accessNote.textContent = canManage()
+          ? 'Manager access active. You can add, remove, and download files saved in this browser.'
+          : 'Download access active. You can download available files, but uploads and deletion are locked.';
+      }
 
       files.forEach((file) => {
         const item = document.createElement('li');
@@ -266,6 +278,10 @@
     const unlock = (mode) => {
       accessMode = mode;
       sessionStorage.setItem(SESSION_KEY, mode);
+      const removedCount = removeLegacyFiles();
+      uploadStatus.textContent = removedCount
+        ? `${removedCount} old file placeholder was removed. Please upload it again so it can be downloaded.`
+        : '';
       loginPanel.classList.add('hidden');
       vaultPanel.classList.remove('hidden');
       renderFiles();
@@ -291,8 +307,12 @@
       event.preventDefault();
       if (!canManage()) return;
       const uploads = Array.from(fileInput.files || []);
-      if (!uploads.length) return;
-      const currentFiles = getFiles();
+      if (!uploads.length) {
+        uploadStatus.textContent = 'Choose a file first, then click Add to File List.';
+        return;
+      }
+      uploadStatus.textContent = 'Adding file...';
+      const currentFiles = getDownloadableFiles();
       Promise.all(uploads.map(async (file) => ({
         id: `${Date.now()}-${crypto.randomUUID()}`,
         name: file.name,
@@ -303,9 +323,12 @@
       }))).then((newFiles) => {
         saveFiles([...newFiles, ...currentFiles]);
         fileInput.value = '';
+        uploadStatus.textContent = `${newFiles.length} file${newFiles.length === 1 ? '' : 's'} added.`;
         renderFiles();
-      }).catch(() => {
-        accessNote.textContent = 'One of those files could not be added. Try a smaller file or a different format.';
+      }).catch((error) => {
+        uploadStatus.textContent = error && error.name === 'QuotaExceededError'
+          ? 'That file is too large for browser storage. Try a smaller file.'
+          : 'One of those files could not be added. Try a smaller file or a different format.';
       });
     });
 
