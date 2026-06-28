@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -128,6 +128,9 @@
     .file-card span { display: block; margin-top: 5px; color: var(--muted); font-size: .92rem; }
     .empty { padding: 24px; border: 1px dashed rgba(255,255,255,.28); border-radius: 22px; color: var(--muted); text-align: center; }
     .note { font-size: .9rem; color: var(--muted); }
+    .role-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0 24px; }
+    .role-card { border-radius: 22px; padding: 20px; border: 1px solid var(--border); background: rgba(255,255,255,.07); text-align: left; }
+    .role-card.active { border-color: rgba(0,229,255,.72); box-shadow: 0 0 0 3px rgba(0,229,255,.12); }
     .server-actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0; }
     .server-frame {
       width: 100%;
@@ -139,6 +142,7 @@
 
     @media (max-width: 640px) {
       .file-card { grid-template-columns: 1fr; }
+      .role-grid { grid-template-columns: 1fr; }
       .brand-logo { width: min(220px, 58vw); }
     }
   </style>
@@ -152,12 +156,22 @@
   </header>
 
   <main class="shell">
-    <span class="eyebrow">🔒 Unlisted file vault</span>
+    <span class="eyebrow">ðŸ”’ Unlisted file vault</span>
     <h1>Secure access for <span class="gradient-text">shared files.</span></h1>
     <p>This private page is intentionally not linked from the public homepage. Enter the manager code to add or remove files, or the download code to access available downloads.</p>
 
     <section id="loginPanel" class="panel" aria-labelledby="loginTitle">
-      <h2 id="loginTitle">Enter vault password</h2>
+      <h2 id="loginTitle">Choose access level</h2>
+      <div class="role-grid" aria-label="Vault access level">
+        <button id="managerRole" type="button" class="role-card" data-role="manager">
+          <strong>Manager</strong>
+          <span>Add, remove, and download files</span>
+        </button>
+        <button id="userRole" type="button" class="role-card" data-role="user">
+          <strong>User</strong>
+          <span>Download files only</span>
+        </button>
+      </div>
       <form id="loginForm">
         <label for="password">Password</label>
         <input id="password" type="password" autocomplete="current-password" inputmode="numeric" required />
@@ -170,56 +184,49 @@
       <div class="toolbar">
         <div>
           <h2 id="vaultTitle">File control center</h2>
-          <p id="accessNote" class="note">The live vault server loads below when it is running.</p>
+          <p id="accessNote" class="note">Loading vault server...</p>
         </div>
         <button id="lockButton" type="button" class="danger">Lock Vault</button>
       </div>
 
-      <div class="server-actions">
-        <a id="liveVaultLink" class="cta" href="#" target="_blank" rel="noopener">Open Live Vault</a>
-      </div>
-      <iframe id="liveVaultFrame" class="server-frame" title="Skynet Vault file server"></iframe>
-      <p id="serverStatus" class="status" role="status"></p>
-
-      <form id="uploadForm" class="hidden" data-manager-only>
+      <form id="uploadForm" data-manager-only>
         <label for="fileInput">Upload files</label>
         <input id="fileInput" type="file" multiple />
         <button id="uploadButton" type="submit">Add to File List</button>
       </form>
-      <p id="uploadStatus" class="status hidden" role="status"></p>
+      <p id="uploadStatus" class="status" role="status"></p>
 
-      <div class="toolbar hidden">
+      <div class="toolbar">
         <span class="eyebrow">Uploaded assets</span>
-        <button id="clearButton" type="button" class="danger" data-manager-only>Delete All</button>
       </div>
-      <ul id="fileList" class="file-list hidden"></ul>
-      <p id="emptyState" class="empty hidden">No files uploaded yet. Add files to populate this list.</p>
+      <ul id="fileList" class="file-list"></ul>
+      <p id="emptyState" class="empty">No files uploaded yet.</p>
     </section>
   </main>
 
   <script>
     const MANAGER_PASSWORD = '2311';
-    const DOWNLOAD_PASSWORD = '1212';
-    const STORAGE_KEY = 'skynetproplus-vault-files';
-    const SESSION_KEY = 'skynetproplus-vault-access';
+    const USER_PASSWORD = '1212';
 
     const loginPanel = document.querySelector('#loginPanel');
     const vaultPanel = document.querySelector('#vaultPanel');
     const loginForm = document.querySelector('#loginForm');
     const loginStatus = document.querySelector('#loginStatus');
+    const passwordInput = document.querySelector('#password');
+    const roleButtons = document.querySelectorAll('[data-role]');
     const uploadForm = document.querySelector('#uploadForm');
     const fileInput = document.querySelector('#fileInput');
     const fileList = document.querySelector('#fileList');
     const emptyState = document.querySelector('#emptyState');
     const uploadStatus = document.querySelector('#uploadStatus');
     const lockButton = document.querySelector('#lockButton');
-    const clearButton = document.querySelector('#clearButton');
     const accessNote = document.querySelector('#accessNote');
-    const liveVaultLink = document.querySelector('#liveVaultLink');
-    const liveVaultFrame = document.querySelector('#liveVaultFrame');
-    const serverStatus = document.querySelector('#serverStatus');
     const managerOnlyControls = document.querySelectorAll('[data-manager-only]');
-    let accessMode = sessionStorage.getItem(SESSION_KEY) || '';
+
+    let selectedRole = '';
+    let accessMode = '';
+    let accessPassword = '';
+    let apiBase = '';
 
     const formatBytes = (bytes) => {
       if (bytes === 0) return '0 B';
@@ -228,55 +235,43 @@
       return `${(bytes / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
     };
 
-    const getFiles = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    const saveFiles = (files) => localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
     const canManage = () => accessMode === 'manager';
-    const getDownloadableFiles = () => getFiles().filter((file) => file.dataUrl);
 
-    const removeLegacyFiles = () => {
-      const files = getFiles();
-      const downloadableFiles = files.filter((file) => file.dataUrl);
-      if (downloadableFiles.length !== files.length) saveFiles(downloadableFiles);
-      return files.length - downloadableFiles.length;
+    const setRole = (role) => {
+      selectedRole = role;
+      roleButtons.forEach((button) => button.classList.toggle('active', button.dataset.role === role));
+      passwordInput.focus();
     };
 
-    const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.addEventListener('load', () => resolve(reader.result));
-      reader.addEventListener('error', () => reject(reader.error));
-      reader.readAsDataURL(file);
-    });
-
-    const loadLiveVault = () => {
-      serverStatus.textContent = 'Loading live vault server...';
-      fetch(`vault-url.json?ts=${Date.now()}`)
-        .then((response) => response.json())
-        .then((config) => {
-          if (!config.url) throw new Error('Missing vault URL');
-          liveVaultLink.href = config.url;
-          liveVaultFrame.src = config.url;
-          serverStatus.textContent = canManage()
-            ? 'Use the manager account in the live vault to upload, delete, and download.'
-            : 'Use the download account in the live vault to download files.';
-        })
-        .catch(() => {
-          liveVaultLink.removeAttribute('href');
-          liveVaultFrame.removeAttribute('src');
-          serverStatus.textContent = 'The live vault server URL is not available yet. Start the Skynet Vault launcher.';
-        });
+    const loadApiBase = async () => {
+      if (apiBase) return apiBase;
+      const response = await fetch(`vault-url.json?ts=${Date.now()}`);
+      const config = await response.json();
+      if (!config.url) throw new Error('Vault server is not running.');
+      apiBase = config.url.replace(/\/$/, '');
+      return apiBase;
     };
 
-    const renderFiles = () => {
-      const files = getDownloadableFiles();
+    const apiFetch = async (path, options = {}) => {
+      const base = await loadApiBase();
+      const headers = new Headers(options.headers || {});
+      headers.set('X-Vault-Role', accessMode);
+      headers.set('X-Vault-Password', accessPassword);
+      const response = await fetch(`${base}${path}`, { ...options, headers });
+      if (!response.ok) throw new Error(`Vault server returned ${response.status}`);
+      return response;
+    };
+
+    const renderFiles = async () => {
+      managerOnlyControls.forEach((control) => control.classList.toggle('hidden', !canManage()));
+      accessNote.textContent = canManage()
+        ? 'Manager access active. You can add, remove, and download files.'
+        : 'User access active. You can download files only.';
+
+      const response = await apiFetch('/api/files');
+      const files = await response.json();
       fileList.innerHTML = '';
       emptyState.classList.toggle('hidden', files.length > 0);
-      clearButton.disabled = files.length === 0 || !canManage();
-      managerOnlyControls.forEach((control) => control.classList.toggle('hidden', !canManage()));
-      if (!uploadStatus.textContent) {
-        accessNote.textContent = canManage()
-          ? 'Manager access active. You can add, remove, and download files saved in this browser.'
-          : 'Download access active. You can download available files, but uploads and deletion are locked.';
-      }
 
       files.forEach((file) => {
         const item = document.createElement('li');
@@ -284,63 +279,64 @@
         const name = document.createElement('strong');
         const meta = document.createElement('span');
         const actions = document.createElement('div');
-        const downloadLink = document.createElement('a');
+        const downloadButton = document.createElement('button');
         const deleteButton = document.createElement('button');
 
         item.className = 'file-card';
         name.textContent = file.name;
-        meta.textContent = `${formatBytes(file.size)} • ${file.type || 'Unknown type'} • Added ${file.added}`;
-        downloadLink.className = 'cta';
-        downloadLink.href = file.dataUrl || '#';
-        downloadLink.download = file.name;
-        downloadLink.textContent = file.dataUrl ? 'Download' : 'Unavailable';
-        if (!file.dataUrl) {
-          downloadLink.setAttribute('aria-disabled', 'true');
-          downloadLink.addEventListener('click', (event) => event.preventDefault());
-        }
+        meta.textContent = `${formatBytes(file.size)} - Updated ${file.modified}`;
+        downloadButton.type = 'button';
+        downloadButton.dataset.download = file.name;
+        downloadButton.textContent = 'Download';
         deleteButton.className = 'danger';
         deleteButton.type = 'button';
-        deleteButton.dataset.id = file.id;
+        deleteButton.dataset.delete = file.name;
         deleteButton.textContent = 'Delete';
 
         details.append(name, meta);
-        actions.append(downloadLink);
+        actions.append(downloadButton);
         if (canManage()) actions.append(deleteButton);
         item.append(details, actions);
         fileList.appendChild(item);
       });
     };
 
-    const unlock = (mode) => {
-      accessMode = mode;
-      sessionStorage.setItem(SESSION_KEY, mode);
-      const removedCount = removeLegacyFiles();
-      uploadStatus.textContent = removedCount
-        ? `${removedCount} old file placeholder was removed. Please upload it again so it can be downloaded.`
-        : '';
+    const unlock = async (role, password) => {
+      accessMode = role;
+      accessPassword = password;
       loginPanel.classList.add('hidden');
       vaultPanel.classList.remove('hidden');
-      renderFiles();
-      loadLiveVault();
+      uploadStatus.textContent = '';
+      try {
+        await renderFiles();
+      } catch (error) {
+        uploadStatus.textContent = 'The vault server is not reachable. Start the Skynet Vault Launcher.';
+      }
     };
+
+    roleButtons.forEach((button) => button.addEventListener('click', () => setRole(button.dataset.role)));
 
     loginForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      const password = document.querySelector('#password').value;
-      if (password === MANAGER_PASSWORD) {
+      const password = passwordInput.value;
+      if (!selectedRole) {
+        loginStatus.textContent = 'Choose Manager or User first.';
+        return;
+      }
+      if (selectedRole === 'manager' && password === MANAGER_PASSWORD) {
         loginStatus.textContent = 'Manager access granted.';
-        unlock('manager');
+        unlock('manager', password);
         loginForm.reset();
-      } else if (password === DOWNLOAD_PASSWORD) {
-        loginStatus.textContent = 'Download access granted.';
-        unlock('download');
+      } else if (selectedRole === 'user' && password === USER_PASSWORD) {
+        loginStatus.textContent = 'User access granted.';
+        unlock('user', password);
         loginForm.reset();
       } else {
         loginStatus.textContent = 'Incorrect password. Try again.';
       }
     });
 
-    uploadForm.addEventListener('submit', (event) => {
+    uploadForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       if (!canManage()) return;
       const uploads = Array.from(fileInput.files || []);
@@ -348,48 +344,50 @@
         uploadStatus.textContent = 'Choose a file first, then click Add to File List.';
         return;
       }
-      uploadStatus.textContent = 'Adding file...';
-      const currentFiles = getDownloadableFiles();
-      Promise.all(uploads.map(async (file) => ({
-        id: `${Date.now()}-${crypto.randomUUID()}`,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        added: new Date().toLocaleString(),
-        dataUrl: await readFileAsDataUrl(file)
-      }))).then((newFiles) => {
-        saveFiles([...newFiles, ...currentFiles]);
+      const body = new FormData();
+      uploads.forEach((file) => body.append('files', file));
+      uploadStatus.textContent = 'Uploading...';
+      try {
+        await apiFetch('/api/upload', { method: 'POST', body });
         fileInput.value = '';
-        uploadStatus.textContent = `${newFiles.length} file${newFiles.length === 1 ? '' : 's'} added.`;
-        renderFiles();
-      }).catch((error) => {
-        uploadStatus.textContent = error && error.name === 'QuotaExceededError'
-          ? 'That file is too large for browser storage. Try a smaller file.'
-          : 'One of those files could not be added. Try a smaller file or a different format.';
-      });
+        uploadStatus.textContent = `${uploads.length} file${uploads.length === 1 ? '' : 's'} added.`;
+        await renderFiles();
+      } catch (error) {
+        uploadStatus.textContent = 'Upload failed. Check that the Skynet Vault Launcher is running.';
+      }
     });
 
-    fileList.addEventListener('click', (event) => {
-      const button = event.target.closest('button[data-id]');
-      if (!button || !canManage()) return;
-      saveFiles(getFiles().filter((file) => file.id !== button.dataset.id));
-      renderFiles();
-    });
+    fileList.addEventListener('click', async (event) => {
+      const downloadButton = event.target.closest('button[data-download]');
+      const deleteButton = event.target.closest('button[data-delete]');
 
-    clearButton.addEventListener('click', () => {
-      if (!canManage()) return;
-      saveFiles([]);
-      renderFiles();
+      if (downloadButton) {
+        const downloadName = downloadButton.dataset.download;
+        const response = await apiFetch(`/api/download/${encodeURIComponent(downloadName)}`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = downloadName;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+
+      if (deleteButton && canManage()) {
+        const deleteName = deleteButton.dataset.delete;
+        await apiFetch(`/api/files/${encodeURIComponent(deleteName)}`, { method: 'DELETE' });
+        uploadStatus.textContent = `${deleteName} deleted.`;
+        await renderFiles();
+      }
     });
 
     lockButton.addEventListener('click', () => {
-      sessionStorage.removeItem(SESSION_KEY);
       accessMode = '';
+      accessPassword = '';
       vaultPanel.classList.add('hidden');
       loginPanel.classList.remove('hidden');
     });
-
-    if (accessMode === 'manager' || accessMode === 'download') unlock(accessMode);
   </script>
 </body>
 </html>
+
