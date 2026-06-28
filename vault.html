@@ -128,6 +128,14 @@
     .file-card span { display: block; margin-top: 5px; color: var(--muted); font-size: .92rem; }
     .empty { padding: 24px; border: 1px dashed rgba(255,255,255,.28); border-radius: 22px; color: var(--muted); text-align: center; }
     .note { font-size: .9rem; color: var(--muted); }
+    .server-actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0; }
+    .server-frame {
+      width: 100%;
+      min-height: 680px;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background: rgba(255,255,255,.06);
+    }
 
     @media (max-width: 640px) {
       .file-card { grid-template-columns: 1fr; }
@@ -162,24 +170,30 @@
       <div class="toolbar">
         <div>
           <h2 id="vaultTitle">File control center</h2>
-          <p id="accessNote" class="note">Files are saved locally in this browser. For shared cloud uploads, connect this page to a storage backend.</p>
+          <p id="accessNote" class="note">The live vault server loads below when it is running.</p>
         </div>
         <button id="lockButton" type="button" class="danger">Lock Vault</button>
       </div>
 
-      <form id="uploadForm" data-manager-only>
+      <div class="server-actions">
+        <a id="liveVaultLink" class="cta" href="#" target="_blank" rel="noopener">Open Live Vault</a>
+      </div>
+      <iframe id="liveVaultFrame" class="server-frame" title="Skynet Vault file server"></iframe>
+      <p id="serverStatus" class="status" role="status"></p>
+
+      <form id="uploadForm" class="hidden" data-manager-only>
         <label for="fileInput">Upload files</label>
         <input id="fileInput" type="file" multiple />
         <button id="uploadButton" type="submit">Add to File List</button>
       </form>
-      <p id="uploadStatus" class="status" role="status"></p>
+      <p id="uploadStatus" class="status hidden" role="status"></p>
 
-      <div class="toolbar">
+      <div class="toolbar hidden">
         <span class="eyebrow">Uploaded assets</span>
         <button id="clearButton" type="button" class="danger" data-manager-only>Delete All</button>
       </div>
-      <ul id="fileList" class="file-list"></ul>
-      <p id="emptyState" class="empty">No files uploaded yet. Add files to populate this list.</p>
+      <ul id="fileList" class="file-list hidden"></ul>
+      <p id="emptyState" class="empty hidden">No files uploaded yet. Add files to populate this list.</p>
     </section>
   </main>
 
@@ -201,6 +215,9 @@
     const lockButton = document.querySelector('#lockButton');
     const clearButton = document.querySelector('#clearButton');
     const accessNote = document.querySelector('#accessNote');
+    const liveVaultLink = document.querySelector('#liveVaultLink');
+    const liveVaultFrame = document.querySelector('#liveVaultFrame');
+    const serverStatus = document.querySelector('#serverStatus');
     const managerOnlyControls = document.querySelectorAll('[data-manager-only]');
     let accessMode = sessionStorage.getItem(SESSION_KEY) || '';
 
@@ -229,6 +246,25 @@
       reader.addEventListener('error', () => reject(reader.error));
       reader.readAsDataURL(file);
     });
+
+    const loadLiveVault = () => {
+      serverStatus.textContent = 'Loading live vault server...';
+      fetch(`vault-url.json?ts=${Date.now()}`)
+        .then((response) => response.json())
+        .then((config) => {
+          if (!config.url) throw new Error('Missing vault URL');
+          liveVaultLink.href = config.url;
+          liveVaultFrame.src = config.url;
+          serverStatus.textContent = canManage()
+            ? 'Use the manager account in the live vault to upload, delete, and download.'
+            : 'Use the download account in the live vault to download files.';
+        })
+        .catch(() => {
+          liveVaultLink.removeAttribute('href');
+          liveVaultFrame.removeAttribute('src');
+          serverStatus.textContent = 'The live vault server URL is not available yet. Start the Skynet Vault launcher.';
+        });
+    };
 
     const renderFiles = () => {
       const files = getDownloadableFiles();
@@ -285,6 +321,7 @@
       loginPanel.classList.add('hidden');
       vaultPanel.classList.remove('hidden');
       renderFiles();
+      loadLiveVault();
     };
 
     loginForm.addEventListener('submit', (event) => {
